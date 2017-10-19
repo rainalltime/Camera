@@ -27,11 +27,13 @@ Modification  :
 //Windows  
 extern "C"
 {
+#include <windows.h>
 #include "libavcodec/avcodec.h"  
 #include "libavformat/avformat.h"  
 #include "libswscale/swscale.h"  
 #include "libavutil/imgutils.h"  
 #include "libavdevice/avdevice.h"
+#include"libavutil\log.h"
 #include "SDL2/SDL.h"  
 };
 #else  
@@ -55,9 +57,13 @@ extern "C"
 
 #define SFM_BREAK_EVENT  (SDL_USEREVENT + 2)  
 
+#define SFM_QUERY_TIMEOUT  (SDL_USEREVENT + 3)  
+
+#define SFM_FIND_DEVICES  (SDL_USEREVENT + 4)  
+
 int thread_exit = 0;
 int thread_pause = 0;
-
+char deviceName[1024];
 int sfp_refresh_thread(void *opaque) {
 	thread_exit = 0;
 	thread_pause = 0;
@@ -80,6 +86,7 @@ int sfp_refresh_thread(void *opaque) {
 	return 0;
 }
 void logCallback(void*, int, const char*, va_list);
+int queryTimeSet(void * time);
 int main(int argc, char* argv[])
 {
 	AVFormatContext *pFormatCtx;
@@ -88,17 +95,33 @@ int main(int argc, char* argv[])
 	pFormatCtx = avformat_alloc_context();
 #ifdef _WIN32
 #ifdef USE_DSHOW
+	SDL_Event eventC;
 	AVInputFormat*ifmt = av_find_input_format("dshow");//使用dshow
 	AVDictionary* options = NULL;
 	av_dict_set(&options, "list_devices", "true", 0);
 	AVInputFormat *iformat = av_find_input_format("dshow");
 	av_log_set_callback(logCallback);
 	avformat_open_input(&pFormatCtx, "video=dummy", iformat, &options);
-
-	if (avformat_open_input(&pFormatCtx, "video=Vimicro USB Camera (Altair)", ifmt, NULL) < 0) {
-		printf("Couldn't open input stream.（无法打开输入流）\n");
-		return -1;
+	int queryTime=1000;
+	auto queryTimeId=SDL_CreateThread(queryTimeSet,NULL,&queryTime);
+	while (true) {
+		SDL_WaitEvent(&eventC);
+		if (eventC.type == SFM_QUERY_TIMEOUT) {
+			return -1; 
+		}
+		if (eventC.type == SFM_FIND_DEVICES) { 
+			//pFormatCtx = avformat_alloc_context();
+			char openUrl[1024];
+			strcpy(openUrl,"video=");
+			strcat(openUrl, deviceName);
+			if (avformat_open_input(&pFormatCtx, openUrl, ifmt, NULL) < 0) {
+				printf("Couldn't open input stream.（无法打开输入流）\n");
+				return -1;
+			}
+			break; 
+		}
 	}
+
 #else
 	AVInputFormat *ifmt = av_find_input_format("vfwcap");//使用vfwcap
 	//AVDictionary* options = NULL;
@@ -250,6 +273,30 @@ int main(int argc, char* argv[])
     return 0;
 }
 
-	void logCallback(void *, int, const char *, va_list)
+	void logCallback(void *ptr, int level, const char *fmt, va_list vl)
 	{
+		SDL_Event event;
+		char*str=new char[1000];
+		vsprintf(str, fmt, vl);
+		event.type = SFM_FIND_DEVICES;
+		static bool isFirst=true ;//仅第一个设备
+		std::cout << fmt;
+		if (!strcmp(fmt, " \"%s\"\n") && isFirst) {
+			isFirst = false;
+			str[strlen(str)-2]='\0';//去掉后面的\n
+			strcpy(deviceName,str+2);//去掉前面的\“
+
+			SDL_PushEvent(&event);
+		}
+		delete str; 
+	}
+
+
+	int queryTimeSet(void * time)
+	{
+		SDL_Delay(*(int*)time);
+		SDL_Event event;
+		event.type = SFM_QUERY_TIMEOUT;
+		SDL_PushEvent(&event);
+		return 0;
 	}
