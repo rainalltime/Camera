@@ -20,7 +20,7 @@ Modification  :
 #include <iostream>  
 
 #define 严格
-#define USE_DSHOW
+//#define USE_DSHOW
 
 #define __STDC_CONSTANT_MACROS  
 #ifdef _WIN32  
@@ -102,7 +102,7 @@ int main(int argc, char* argv[])
 	AVInputFormat *iformat = av_find_input_format("dshow");
 	av_log_set_callback(logCallback);
 	avformat_open_input(&pFormatCtx, "video=dummy", iformat, &options);
-	int queryTime=1000;
+	int queryTime=100;//设置查询超时时间
 	auto queryTimeId=SDL_CreateThread(queryTimeSet,NULL,&queryTime);
 	while (true) {
 		SDL_WaitEvent(&eventC);
@@ -292,7 +292,7 @@ int main(int argc, char* argv[])
 	}
 
 
-	int queryTimeSet(void * time)
+	int queryTimeSet(void * time)//查询设备超时
 	{
 		SDL_Delay(*(int*)time);
 		SDL_Event event;
