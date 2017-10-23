@@ -172,9 +172,27 @@ int main(int argc, char* argv[])
 	//outfile参数定义
 	auto packet = (AVPacket *)av_malloc(sizeof(AVPacket));
 	int got_output, framecnt;
+	AVCodecContext*pOutCodecCtx;
 	AVPacket pkt;
 
+	pOutCodecCtx = pCodecCtx = avcodec_alloc_context3(avcodec_find_encoder(AV_CODEC_ID_H264));
+	pOutCodecCtx->time_base.num = 1;
+	pOutCodecCtx->time_base.den = 25;
+	pOutCodecCtx->bit_rate = 400000;
+	pOutCodecCtx->gop_size = 250; 
+	pOutCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
+	/* Some formats want stream headers to be separate. */
+	pOutCodecCtx->flags |= CODEC_FLAG_GLOBAL_HEADER;
+
+	//H264 codec param
+	//pCodecCtx->me_range = 16;
+	//pCodecCtx->max_qdiff = 4;
+	//pCodecCtx->qcompress = 0.6;
+	pOutCodecCtx->qmin = 10;
+	pOutCodecCtx->qmax = 51;
+	//Optional Param
+	pOutCodecCtx->max_b_frames = 3;
 	auto fp_out = fopen(filename_out, "wb");
 	if (!fp_out) {
 		printf("Could not open %s\n", filename_out);
@@ -190,22 +208,22 @@ int main(int argc, char* argv[])
 			if (packet->stream_index == videoindex)
 				break;
 		}
-		auto 	ret = avcodec_send_packet(pCodecCtx, packet)*
-			avcodec_receive_frame(pCodecCtx, pFrame);
+		auto 	ret = avcodec_send_packet(pOutCodecCtx, packet)*
+			avcodec_receive_frame(pOutCodecCtx, pFrame);
 		if (ret < 0) {
 			printf("Decode Error.\n");
 			return -1;
 		}
 		else {
 			sws_scale(img_convert_ctx, (const unsigned char* const*)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameYUV->data, pFrameYUV->linesize);//生成图片
-			pFrameYUV->pts = i;
-			pFrameYUV->format = AV_PIX_FMT_YUV420P;// pCodecCtx->pix_fmt;
-			pFrameYUV->width = pCodecCtx->width;
-			pFrameYUV->height = pCodecCtx->height;
+			//pFrameYUV->pts = i;
+			//pFrameYUV->format = AV_PIX_FMT_YUV420P;// pCodecCtx->pix_fmt;
+			//pFrameYUV->width = pOutCodecCtx->width;
+			//pFrameYUV->height = pOutCodecCtx->height;
 			pkt.data = NULL;
 			pkt.size = 0;
 			av_init_packet(&pkt);
-			ret = avcodec_encode_video2(pCodecCtx, &pkt, pFrame, &got_output);
+			ret = avcodec_encode_video2(pOutCodecCtx, &pkt, pFrameYUV, &got_output);
 			if (ret < 0) {
 				printf("Error encoding frame\n");
 				return -1;
@@ -218,7 +236,7 @@ int main(int argc, char* argv[])
 			}
 		}
 		for (got_output = 1; got_output; i++) {
-			ret = avcodec_encode_video2(pCodecCtx, &pkt, NULL, &got_output);
+			ret = avcodec_encode_video2(pOutCodecCtx, &pkt, NULL, &got_output);
 			if (ret < 0) {
 				printf("Error encoding frame\n");
 				return -1;
