@@ -21,7 +21,7 @@ Modification  :
 
 #define 严格
 //#define USE_DSHOW
-
+#define OUTFILE
 #define __STDC_CONSTANT_MACROS  
 #ifdef _WIN32  
 //Windows  
@@ -64,35 +64,21 @@ extern "C"
 int thread_exit = 0;
 int thread_pause = 0;
 char deviceName[1024];
-int sfp_refresh_thread(void *opaque) {
-	thread_exit = 0;
-	thread_pause = 0;
-
-	while (!thread_exit) {
-		if (!thread_pause) {
-			SDL_Event event;
-			event.type = SFM_REFRESH_EVENT;
-			SDL_PushEvent(&event);
-		}
-		SDL_Delay(40);
-	}
-	thread_exit = 0;
-	thread_pause = 0;
-	//Break  
-	SDL_Event event;
-	event.type = SFM_BREAK_EVENT;
-	SDL_PushEvent(&event);
-
-	return 0;
-}
+int sfp_refresh_thread(void *opaque); 
 void logCallback(void*, int, const char*, va_list);
 int queryTimeSet(void * time);
+int keyEnter(void *opaque);
 int main(int argc, char* argv[])
 {
+
 	AVFormatContext *pFormatCtx;
 	av_register_all(); 
 	avdevice_register_all();//注册所有设备 
 	pFormatCtx = avformat_alloc_context();
+#ifdef OUTFILE
+	char filename_out[100] = "dahai.h264";//输出路径
+#endif
+
 #ifdef _WIN32
 #ifdef USE_DSHOW
 	SDL_Event eventC;
@@ -102,6 +88,7 @@ int main(int argc, char* argv[])
 	AVInputFormat *iformat = av_find_input_format("dshow");
 	av_log_set_callback(logCallback);
 	avformat_open_input(&pFormatCtx, "video=dummy", iformat, &options);
+
 	int queryTime=100;//设置查询超时时间
 	auto queryTimeId=SDL_CreateThread(queryTimeSet,NULL,&queryTime);
 	while (true) {
@@ -147,7 +134,8 @@ int main(int argc, char* argv[])
 	auto videoindex = -1; 
 	int i;
 	for (i = 0; i < pFormatCtx->nb_streams; i++) {
-		if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+		if (pFormatCtx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
+		{
 			videoindex = i;
 			break;
 		}
@@ -157,7 +145,6 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 	AVCodec *codec = avcodec_find_decoder(pFormatCtx->streams[i]->codecpar->codec_id);
-
 	auto pCodecCtx = avcodec_alloc_context3(codec);//pFormatCtx->streams[videoindex]->codec;
 	avcodec_parameters_to_context(pCodecCtx, pFormatCtx->streams[videoindex]->codecpar);
 	auto pCodec = avcodec_find_decoder(pCodecCtx->codec_id);
@@ -171,26 +158,86 @@ int main(int argc, char* argv[])
 	}
 	auto pFrame = av_frame_alloc();
 	auto pFrameYUV = av_frame_alloc();
-
 	auto out_buffer = (unsigned char *)av_malloc(av_image_get_buffer_size(AV_PIX_FMT_YUV420P, pCodecCtx->width, pCodecCtx->height, 1));
 	av_image_fill_arrays(pFrameYUV->data, pFrameYUV->linesize, out_buffer,
 		AV_PIX_FMT_YUV420P, pCodecCtx->width, pCodecCtx->height, 1);
-
-	//设置一些参数sws_scale会用到
+	//设置一些参数，sws_scale函数会用到
 	auto img_convert_ctx = sws_getContext(pCodecCtx->width, pCodecCtx->height, pCodecCtx->pix_fmt,
 		pCodecCtx->width, pCodecCtx->height, AV_PIX_FMT_YUV420P, SWS_BICUBIC, NULL, NULL, NULL);
-
-
-	if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_TIMER)) {
+	if (SDL_Init(SDL_INIT_EVERYTHING)) {
 		printf("Could not initialize SDL - %s\n", SDL_GetError());
 		return -1;
 	}
-	//SDL 2.0 Support for multiple windows  
+#ifdef OUTFILE
+	//outfile参数定义
+	auto packet = (AVPacket *)av_malloc(sizeof(AVPacket));
+	int got_output, framecnt;
+	AVPacket pkt;
+
+
+	auto fp_out = fopen(filename_out, "wb");
+	if (!fp_out) {
+		printf("Could not open %s\n", filename_out);
+		return -1;
+	}  
+	auto key = SDL_CreateThread(sfp_refresh_thread, NULL, NULL);
+	while (true) {
+		if (thread_exit)//退出循环
+			break;
+		while (true) {
+			if (av_read_frame(pFormatCtx, packet)<0)
+				thread_exit = 1;
+			if (packet->stream_index == videoindex)
+				break;
+		}
+		auto 	ret = avcodec_send_packet(pCodecCtx, packet)*
+			avcodec_receive_frame(pCodecCtx, pFrame);
+		if (ret < 0) {
+			printf("Decode Error.\n");
+			return -1;
+		}
+		else {
+			sws_scale(img_convert_ctx, (const unsigned char* const*)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameYUV->data, pFrameYUV->linesize);//生成图片
+			pFrameYUV->pts = i;
+			pFrameYUV->format = AV_PIX_FMT_YUV420P;// pCodecCtx->pix_fmt;
+			pFrameYUV->width = pCodecCtx->width;
+			pFrameYUV->height = pCodecCtx->height;
+			pkt.data = NULL;
+			pkt.size = 0;
+			av_init_packet(&pkt);
+			ret = avcodec_encode_video2(pCodecCtx, &pkt, pFrame, &got_output);
+			if (ret < 0) {
+				printf("Error encoding frame\n");
+				return -1;
+			}
+			if (got_output) {
+				printf("Succeed to encode frame: %5d\tsize:%5d\n", framecnt, pkt.size);
+				framecnt++;
+				fwrite(pkt.data, 1, pkt.size, fp_out);
+				av_free_packet(&pkt);
+			}
+		}
+		for (got_output = 1; got_output; i++) {
+			ret = avcodec_encode_video2(pCodecCtx, &pkt, NULL, &got_output);
+			if (ret < 0) {
+				printf("Error encoding frame\n");
+				return -1;
+			}
+			if (got_output) {
+				printf("Flush Encoder: Succeed to encode 1 frame!\tsize:%5d\n", pkt.size);
+				fwrite(pkt.data, 1, pkt.size, fp_out);
+				av_free_packet(&pkt);
+			}
+		}
+		fclose(fp_out);
+	}
+#else
+	//SDL 2.0 Support for multiple windows
+
 	auto screen_w = pCodecCtx->width;
 	auto screen_h = pCodecCtx->height;
 	auto screen = SDL_CreateWindow("摄像头采集与播放-来邦科技", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 		screen_w, screen_h, SDL_WINDOW_SHOWN);
-
 	if (!screen) {
 		printf("SDL: could not create window - exiting:%s\n", SDL_GetError());
 		return -1;
@@ -199,15 +246,12 @@ int main(int argc, char* argv[])
 	//IYUV: Y + U + V  (3 planes)  
 	//YV12: Y + V + U  (3 planes)  
 	auto sdlTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, pCodecCtx->width, pCodecCtx->height);
-
-
 	auto packet = (AVPacket *)av_malloc(sizeof(AVPacket));
 #ifdef 严格
 	auto video_tid = SDL_CreateThread(sfp_refresh_thread, NULL, NULL);
 #endif
 	//------------SDL End------------  
 	//Event Loop  
-
 	while(true) {
 		//Wait event
 #ifdef 严格
@@ -215,14 +259,13 @@ int main(int argc, char* argv[])
 		SDL_WaitEvent(&event);
 		if (event.type == SFM_REFRESH_EVENT) {
 #endif
-			while (1) {
+			while (true) {
 				if (av_read_frame(pFormatCtx, packet)<0)
 					thread_exit = 1;
-
 				if (packet->stream_index == videoindex)
 					break;
 			}
-		auto 	ret = avcodec_send_packet(pCodecCtx, packet)&
+		auto 	ret = avcodec_send_packet(pCodecCtx, packet)*
 				avcodec_receive_frame(pCodecCtx, pFrame);
 			if (ret < 0) {
 				printf("Decode Error.\n");
@@ -240,7 +283,6 @@ int main(int argc, char* argv[])
 			}
 			av_packet_unref(packet);
 #ifdef 严格
-
 		}
 		else if (event.type == SDL_KEYDOWN) {
 			//Pause  
@@ -259,44 +301,68 @@ int main(int argc, char* argv[])
 
 #endif
 	}
-
 		sws_freeContext(img_convert_ctx);
-
 		SDL_Quit();
-		//--------------  
-		av_frame_free(&pFrameYUV);
-		av_frame_free(&pFrame);
-		avcodec_close(pCodecCtx);
-		avformat_close_input(&pFormatCtx);
-
-		return 0;
-    return 0;
+		//--------------
+#endif//是否输出到文件的endif
+	//释放资源
+	av_frame_free(&pFrameYUV);
+	av_frame_free(&pFrame);
+	avcodec_close(pCodecCtx);
+	avformat_close_input(&pFormatCtx);
+	return 0;
 }
-
-	void logCallback(void *ptr, int level, const char *fmt, va_list vl)
+void logCallback(void *ptr, int level, const char *fmt, va_list vl)
+{
+	SDL_Event event;
+	char*str=new char[1000];
+	vsprintf(str, fmt, vl);
+	event.type = SFM_FIND_DEVICES;
+	static bool isFirst=true ;//仅第一个设备
+	std::cout << fmt;
+	if (!strcmp(fmt, " \"%s\"\n") && isFirst) {
+		isFirst = false;
+		str[strlen(str)-2]='\0';//去掉后面的\n
+		strcpy(deviceName,str+2);//去掉前面的\“
+			SDL_PushEvent(&event);
+	}
+	delete str; 
+}
+int queryTimeSet(void * time)//查询设备超时
+{
+	SDL_Delay(*(int*)time);
+	SDL_Event event;
+	event.type = SFM_QUERY_TIMEOUT;
+	SDL_PushEvent(&event);
+	return 0;
+}
+int keyEnter(void * opaque)
+{
+	while ((getchar()) != '\n') 
 	{
-		SDL_Event event;
-		char*str=new char[1000];
-		vsprintf(str, fmt, vl);
-		event.type = SFM_FIND_DEVICES;
-		static bool isFirst=true ;//仅第一个设备
-		std::cout << fmt;
-		if (!strcmp(fmt, " \"%s\"\n") && isFirst) {
-			isFirst = false;
-			str[strlen(str)-2]='\0';//去掉后面的\n
-			strcpy(deviceName,str+2);//去掉前面的\“
 
+	}
+	thread_exit = 1;
+	return 0;
+}
+int sfp_refresh_thread(void *opaque) {
+	thread_exit = 0;
+	thread_pause = 0;
+
+	while (!thread_exit) {
+		if (!thread_pause) {
+			SDL_Event event;
+			event.type = SFM_REFRESH_EVENT;
 			SDL_PushEvent(&event);
 		}
-		delete str; 
+		SDL_Delay(40);
 	}
+	thread_exit = 0;
+	thread_pause = 0;
+	//Break  
+	SDL_Event event;
+	event.type = SFM_BREAK_EVENT;
+	SDL_PushEvent(&event);
 
-
-	int queryTimeSet(void * time)//查询设备超时
-	{
-		SDL_Delay(*(int*)time);
-		SDL_Event event;
-		event.type = SFM_QUERY_TIMEOUT;
-		SDL_PushEvent(&event);
-		return 0;
-	}
+	return 0;
+}
