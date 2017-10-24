@@ -168,62 +168,161 @@ int main(int argc, char* argv[])
 		return -1;
 	}
 #ifdef OUTFILE
-	//outfile参数定义
+	////outfile参数定义
 	auto packet = (AVPacket *)av_malloc(sizeof(AVPacket));
-	int got_output, framecnt;
+	int got_output, framecnt=0;
 	AVCodecContext*pOutCodecCtx;
 	AVPacket pkt;
 
-	pOutCodecCtx = pCodecCtx = avcodec_alloc_context3(avcodec_find_encoder(AV_CODEC_ID_H264));
-	pOutCodecCtx->time_base.num = 1;
-	pOutCodecCtx->time_base.den = 25;
-	pOutCodecCtx->bit_rate = 400000;
-	pOutCodecCtx->gop_size = 250; 
-	pOutCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+	//pOutCodecCtx = pCodecCtx = avcodec_alloc_context3(avcodec_find_encoder(AV_CODEC_ID_H264));
+	//pOutCodecCtx->time_base.num = 1;
+	//pOutCodecCtx->time_base.den = 25;
+	//pOutCodecCtx->bit_rate = 400000;
+	//pOutCodecCtx->gop_size = 250; 
+	//pOutCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 
-	/* Some formats want stream headers to be separate. */
-	pOutCodecCtx->flags |= CODEC_FLAG_GLOBAL_HEADER;
+	///* Some formats want stream headers to be separate. */
+	//pOutCodecCtx->flags |= CODEC_FLAG_GLOBAL_HEADER;
 
-	//H264 codec param
-	//pCodecCtx->me_range = 16;
-	//pCodecCtx->max_qdiff = 4;
-	//pCodecCtx->qcompress = 0.6;
-	pOutCodecCtx->qmin = 10;
-	pOutCodecCtx->qmax = 51;
-	//Optional Param
-	pOutCodecCtx->max_b_frames = 3;
+	////H264 codec param
+	////pCodecCtx->me_range = 16;
+	////pCodecCtx->max_qdiff = 4;
+	////pCodecCtx->qcompress = 0.6;
+	//pOutCodecCtx->qmin = 10;
+	//pOutCodecCtx->qmax = 51;
+	////Optional Param
+	//pOutCodecCtx->max_b_frames = 3;
 	auto fp_out = fopen(filename_out, "wb");
 	if (!fp_out) {
 		printf("Could not open %s\n", filename_out);
 		return -1;
 	}  
-	auto key = SDL_CreateThread(sfp_refresh_thread, NULL, NULL);
+	//auto key = SDL_CreateThread(sfp_refresh_thread, NULL, NULL);
+	//while (true) {
+	//	if (thread_exit)//退出循环
+	//		break;
+	//	while (true) {
+	//		if (av_read_frame(pFormatCtx, packet)<0)
+	//			thread_exit = 1;
+	//		if (packet->stream_index == videoindex)
+	//			break;
+	//	}
+	//	auto 	ret = avcodec_send_packet(pOutCodecCtx, packet)*
+	//		avcodec_receive_frame(pOutCodecCtx, pFrame);
+	//	if (ret < 0) {
+	//		printf("Decode Error.\n");
+	//		return -1;
+	//	}
+	//	else {
+	//		sws_scale(img_convert_ctx, (const unsigned char* const*)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameYUV->data, pFrameYUV->linesize);//生成图片
+	//		//pFrameYUV->pts = i;
+	//		//pFrameYUV->format = AV_PIX_FMT_YUV420P;// pCodecCtx->pix_fmt;
+	//		//pFrameYUV->width = pOutCodecCtx->width;
+	//		//pFrameYUV->height = pOutCodecCtx->height;
+	//		pkt.data = NULL;
+	//		pkt.size = 0;
+	//		av_init_packet(&pkt);
+	//		ret = avcodec_encode_video2(pOutCodecCtx, &pkt, pFrameYUV, &got_output);
+	//		if (ret < 0) {
+	//			printf("Error encoding frame\n");
+	//			return -1;
+	//		}
+	//		if (got_output) {
+	//			printf("Succeed to encode frame: %5d\tsize:%5d\n", framecnt, pkt.size);
+	//			framecnt++;
+	//			fwrite(pkt.data, 1, pkt.size, fp_out);
+	//			av_free_packet(&pkt);
+	//		}
+	//	}
+	//	for (got_output = 1; got_output; i++) {
+	//		ret = avcodec_encode_video2(pOutCodecCtx, &pkt, NULL, &got_output);
+	//		if (ret < 0) {
+	//			printf("Error encoding frame\n");
+	//			return -1;
+	//		}
+	//		if (got_output) {
+	//			printf("Flush Encoder: Succeed to encode 1 frame!\tsize:%5d\n", pkt.size);
+	//			fwrite(pkt.data, 1, pkt.size, fp_out);
+	//			av_free_packet(&pkt);
+	//		}
+	//	}
+	//	fclose(fp_out);
+	//}
+	pCodec = avcodec_find_encoder(AV_CODEC_ID_H264);
+	if (!pCodec) {
+		printf("Codec not found\n");
+		return -1;
+	}
+	pOutCodecCtx = avcodec_alloc_context3(pCodec);
+	if (!pOutCodecCtx) {
+		printf("Could not allocate video codec context\n");
+		return -1;
+	}
+	pOutCodecCtx->bit_rate = 400000;
+	pOutCodecCtx->width = pCodecCtx->width;
+	pOutCodecCtx->height = pCodecCtx->height;
+	pOutCodecCtx->time_base.num = 1;
+	pOutCodecCtx->time_base.den = 25;
+	pOutCodecCtx->gop_size = 10;
+	pOutCodecCtx->max_b_frames = 1;
+	pOutCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+	av_opt_set(pOutCodecCtx->priv_data, "preset", "slow", 0);
+	if (avcodec_open2(pOutCodecCtx, pCodec, NULL) < 0) {
+		printf("Could not open codec\n");
+		return -1;
+	}
+	auto screen_w = pCodecCtx->width;
+	auto screen_h = pCodecCtx->height;
+	auto screen = SDL_CreateWindow("摄像头采集与播放-来邦科技", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
+		screen_w, screen_h, SDL_WINDOW_SHOWN);
+	if (!screen) {
+		printf("SDL: could not create window - exiting:%s\n", SDL_GetError());
+		return -1;
+	}
+	auto sdlRenderer = SDL_CreateRenderer(screen, -1, 0);
+	//IYUV: Y + U + V  (3 planes)  
+	//YV12: Y + V + U  (3 planes)  
+	auto sdlTexture = SDL_CreateTexture(sdlRenderer, SDL_PIXELFORMAT_IYUV, SDL_TEXTUREACCESS_STREAMING, pCodecCtx->width, pCodecCtx->height);
+#ifdef 严格
+	auto video_tid = SDL_CreateThread(sfp_refresh_thread, NULL, NULL);
+#endif
+	//------------SDL End------------  
+	//Event Loop  
 	while (true) {
-		if (thread_exit)//退出循环
-			break;
-		while (true) {
-			if (av_read_frame(pFormatCtx, packet)<0)
-				thread_exit = 1;
-			if (packet->stream_index == videoindex)
-				break;
-		}
-		auto 	ret = avcodec_send_packet(pOutCodecCtx, packet)*
-			avcodec_receive_frame(pOutCodecCtx, pFrame);
-		if (ret < 0) {
-			printf("Decode Error.\n");
-			return -1;
-		}
-		else {
-			sws_scale(img_convert_ctx, (const unsigned char* const*)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameYUV->data, pFrameYUV->linesize);//生成图片
-			//pFrameYUV->pts = i;
-			//pFrameYUV->format = AV_PIX_FMT_YUV420P;// pCodecCtx->pix_fmt;
-			//pFrameYUV->width = pOutCodecCtx->width;
-			//pFrameYUV->height = pOutCodecCtx->height;
-			pkt.data = NULL;
-			pkt.size = 0;
-			av_init_packet(&pkt);
-			ret = avcodec_encode_video2(pOutCodecCtx, &pkt, pFrameYUV, &got_output);
+		//Wait event
+#ifdef 严格
+		SDL_Event event;
+		SDL_WaitEvent(&event);
+		if (event.type == SFM_REFRESH_EVENT) {
+#endif
+			while (true) {
+				if (av_read_frame(pFormatCtx, packet)<0)
+					thread_exit = 1;
+				if (packet->stream_index == videoindex)
+					break;
+			}
+			auto 	ret = avcodec_send_packet(pCodecCtx, packet)*
+				avcodec_receive_frame(pCodecCtx, pFrame);
 			if (ret < 0) {
+				printf("Decode Error.\n");
+				return -1;
+			}
+			else {
+				sws_scale(img_convert_ctx, (const unsigned char* const*)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameYUV->data, pFrameYUV->linesize);//生成图片
+
+
+				AVPacket pkt;
+				pkt.data = NULL;
+				pkt.size = 0;
+				av_init_packet(&pkt);
+				int got_output;
+				pFrameYUV->height = pFrame->height;
+				pFrameYUV->pts = i++;
+				pFrameYUV->width = pFrame->width;
+
+				ret = avcodec_encode_video2(pOutCodecCtx, &pkt, pFrameYUV, &got_output);																																		
+
+				if (ret < 0) {
 				printf("Error encoding frame\n");
 				return -1;
 			}
@@ -233,9 +332,38 @@ int main(int argc, char* argv[])
 				fwrite(pkt.data, 1, pkt.size, fp_out);
 				av_free_packet(&pkt);
 			}
+			//SDL---------------------------  
+				SDL_UpdateTexture(sdlTexture, NULL, pFrameYUV->data[0], pFrameYUV->linesize[0]);
+				SDL_RenderClear(sdlRenderer);
+				//SDL_RenderCopy( sdlRenderer, sdlTexture, &sdlRect, &sdlRect );    
+				SDL_RenderCopy(sdlRenderer, sdlTexture, NULL, NULL);
+				SDL_RenderPresent(sdlRenderer);
+				//SDL End-----------------------  
+			}
+			av_packet_unref(packet);
+#ifdef 严格
 		}
+		else if (event.type == SDL_KEYDOWN) {
+			//Pause  
+			if (event.key.keysym.sym == SDLK_SPACE)
+				thread_pause = !thread_pause;
+			if (event.key.keysym.sym == SDLK_ESCAPE)
+				break;
+		}
+		else if (event.type == SDL_QUIT) {
+			thread_exit = 1;
+		}
+		else if (event.type == SFM_BREAK_EVENT) {
+			break;
+		}
+#else
+			SDL_Delay(40);
+			if (thread_exit)break;
+
+#endif
+	}
 		for (got_output = 1; got_output; i++) {
-			ret = avcodec_encode_video2(pOutCodecCtx, &pkt, NULL, &got_output);
+			auto ret = avcodec_encode_video2(pOutCodecCtx, &pkt, NULL, &got_output);
 			if (ret < 0) {
 				printf("Error encoding frame\n");
 				return -1;
@@ -247,7 +375,8 @@ int main(int argc, char* argv[])
 			}
 		}
 		fclose(fp_out);
-	}
+		sws_freeContext(img_convert_ctx);
+		SDL_Quit();
 #else
 	//SDL 2.0 Support for multiple windows
 
@@ -290,7 +419,44 @@ int main(int argc, char* argv[])
 			}
 			else {
 				sws_scale(img_convert_ctx, (const unsigned char* const*)pFrame->data, pFrame->linesize, 0, pCodecCtx->height, pFrameYUV->data, pFrameYUV->linesize);//生成图片
-																																									//SDL---------------------------  
+				
+				pCodec = avcodec_find_encoder(AV_CODEC_ID_H264);
+				if (!pCodec) {
+					printf("Codec not found\n");
+					return -1;
+				}
+				auto pOutCodecCtx = avcodec_alloc_context3(pCodec);
+				if (!pOutCodecCtx) {
+					printf("Could not allocate video codec context\n");
+					return -1;
+				}
+				pOutCodecCtx->bit_rate = 400000;
+				pOutCodecCtx->width = pFrame->width;
+				pOutCodecCtx->height = pFrame->height;
+				pOutCodecCtx->time_base.num = 1;
+				pOutCodecCtx->time_base.den = 25;
+				pOutCodecCtx->gop_size = 10;
+				pOutCodecCtx->max_b_frames = 1;
+				pOutCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
+				av_opt_set(pOutCodecCtx->priv_data, "preset", "slow", 0);
+				if (avcodec_open2(pOutCodecCtx, pCodec, NULL) < 0) {
+					printf("Could not open codec\n");
+					return -1;
+				}
+				AVPacket pkt;
+
+				ret = av_image_alloc(pFrameYUV->data, pFrameYUV->linesize, pOutCodecCtx->width, pOutCodecCtx->height,
+					pOutCodecCtx->pix_fmt, 16);
+				pkt.data = NULL;
+				pkt.size = 0;
+				av_init_packet(&pkt);
+				int got_output;
+				pFrameYUV->height = pFrame->height;
+				pFrameYUV->pts = i;
+				pFrameYUV->width = pFrame->width;
+
+				ret = avcodec_encode_video2(pOutCodecCtx, &pkt, pFrameYUV, &got_output);																																		//SDL---------------------------  
+				
 				SDL_UpdateTexture(sdlTexture, NULL, pFrameYUV->data[0], pFrameYUV->linesize[0]);
 				SDL_RenderClear(sdlRenderer);
 				//SDL_RenderCopy( sdlRenderer, sdlTexture, &sdlRect, &sdlRect );    
