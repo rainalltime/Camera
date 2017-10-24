@@ -70,7 +70,6 @@ int queryTimeSet(void * time);
 int keyEnter(void *opaque);
 int main(int argc, char* argv[])
 {
-
 	AVFormatContext *pFormatCtx;
 	av_register_all(); 
 	avdevice_register_all();//注册所有设备 
