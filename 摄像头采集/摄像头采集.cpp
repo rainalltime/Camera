@@ -265,6 +265,8 @@ int main(int argc, char* argv[])
 	pOutCodecCtx->time_base.den = 25;
 	pOutCodecCtx->gop_size = 10;
 	pOutCodecCtx->max_b_frames = 1;
+	pOutCodecCtx->qmin = 10;
+	pOutCodecCtx->qmax = 51;
 	pOutCodecCtx->pix_fmt = AV_PIX_FMT_YUV420P;
 	av_opt_set(pOutCodecCtx->priv_data, "preset", "slow", 0);
 	if (avcodec_open2(pOutCodecCtx, pCodec, NULL) < 0) {
@@ -363,6 +365,11 @@ int main(int argc, char* argv[])
 #endif
 	}
 		for (got_output = 1; got_output; i++) {
+
+			AVPacket pkt;
+			pkt.data = NULL;
+			pkt.size = 0;
+			av_init_packet(&pkt);
 			auto ret = avcodec_encode_video2(pOutCodecCtx, &pkt, NULL, &got_output);
 			if (ret < 0) {
 				printf("Error encoding frame\n");
